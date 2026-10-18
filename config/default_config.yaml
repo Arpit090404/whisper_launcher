@@ -1,0 +1,17 @@
+hotkey: "alt+space"
+cancel_key: "esc"
+stt: {model: "small.en", device: "cpu", compute_type: "int8", cpu_threads: 4, beam_size: 1, language: "en"}
+audio: {input_device: null, sample_rate: 16000, block_samples: 512}
+endpointing: {rms_threshold: 0.015, silence_ms: 800, min_speech_ms: 300, no_speech_timeout_s: 5, max_record_s: 12}
+matching: {app_min_score: 75, fallback_app_min_score: 85, file_min_score: 80}
+files: {everything_cli_path: "es.exe", max_results: 50, fallback_dirs: ["~/Desktop", "~/Documents", "~/Downloads"], fallback_max_depth: 4, exclude_substrings: ["\\node_modules\\", "\\.git\\", "\\AppData\\", "\\$Recycle.Bin\\"]}
+app_aliases: {chrome: "google chrome", "vs code": "visual studio code", code: "visual studio code", word: "microsoft word", excel: "microsoft excel"}
+sites:
+  youtube: {home: "https://www.youtube.com", search: "https://www.youtube.com/results?search_query={q}"}
+  github: {home: "https://github.com", search: "https://github.com/search?q={q}"}
+  maps: {home: "https://www.google.com/maps", search: "https://www.google.com/maps/search/{q}"}
+  reddit: {home: "https://www.reddit.com", search: "https://www.reddit.com/search/?q={q}"}
+  wikipedia: {home: "https://en.wikipedia.org", search: "https://en.wikipedia.org/w/index.php?search={q}"}
+  amazon: {home: "https://www.amazon.in", search: "https://www.amazon.in/s?k={q}"}
+ui: {bottom_offset_px: 48, result_display_ms: 1100, show_idle_pill: false, show_standby_icon: true}
+startup: {run_at_login: false, refresh_app_index_minutes: 10}

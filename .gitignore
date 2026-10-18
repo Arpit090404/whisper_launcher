@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+
+# Build output
+build/
+build-fixed/
+dist/
+release/
+spec-fixed/
+*.spec
+
+# Local runtime data and editor files
+.env
+.vscode/
+*.log
+
+# Windows
+Thumbs.db
+Desktop.ini

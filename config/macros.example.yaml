@@ -1,0 +1,13 @@
+macros:
+  - name: "work mode"
+    triggers: ["work mode", "start work", "let's work"]
+    steps:
+      - open_app: "visual studio code"
+      - open_url: "https://github.com"
+      - wait: 0.5
+      - run: ["wt.exe"]
+  - name: "study mode"
+    triggers: ["study mode", "start studying"]
+    steps:
+      - open_app: "obsidian"
+      - search: "lofi study music"
