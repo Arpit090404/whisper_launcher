@@ -30,8 +30,8 @@ class Controller(QObject):
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.recorder = Recorder(config, self.recording_finished.emit)
         self.pill.level_source = lambda: self.recorder.rms
-        self.hotkey = self.dictation_hotkey = self.cancel = None
-        self.dictation_release_hooks = []
+        self.hotkey = self.cancel = None
+        self.dictation_hook = None
         self.last_hotkey = 0.0
         self.generation = 0
         self._process_command = lambda _: ActionResult(False, "Speech model unavailable")
@@ -48,20 +48,28 @@ class Controller(QObject):
         self.result_timer.timeout.connect(self.pill.fade_hide)
 
     def register(self):
-        for key in (self.hotkey, self.dictation_hotkey):
-            if key: keyboard.remove_hotkey(key)
-        for hook in self.dictation_release_hooks:
-            keyboard.unhook(hook)
-        self.dictation_release_hooks.clear()
+        if self.hotkey:
+            keyboard.remove_hotkey(self.hotkey)
+        if self.dictation_hook:
+            keyboard.unhook(self.dictation_hook)
+            self.dictation_hook = None
         self.hotkey = keyboard.add_hotkey(self.c["hotkey"], self.hotkey_requested.emit, suppress=False)
-        self.dictation_hotkey = keyboard.add_hotkey(
-            self.c["dictation_hotkey"], self.dictation_requested.emit, suppress=True
+        dictation_key = self.c["dictation_hotkey"].strip()
+        if "+" in dictation_key:
+            raise ValueError("dictation_hotkey must be one key (for example: f8)")
+        # One low-level hook receives both transitions.  Registering press and
+        # release separately can lose the key-up event when the press is suppressed.
+        self.dictation_hook = keyboard.hook_key(
+            dictation_key, self._on_dictation_key_event, suppress=True
         )
-        # PTT completes as soon as either key forming the shortcut is released.
-        for key_name in self.c["dictation_hotkey"].split("+"):
-            self.dictation_release_hooks.append(
-                keyboard.on_release_key(key_name.strip(), self.dictation_released.emit, suppress=False)
-            )
+
+    def _on_dictation_key_event(self, event):
+        """Forward F8 transitions to Qt's main thread without touching UI here."""
+        if event.event_type == keyboard.KEY_DOWN:
+            self.dictation_requested.emit()
+        elif event.event_type == keyboard.KEY_UP:
+            self.dictation_released.emit()
+        return False
 
     def reload_config(self, show_result=True):
         try:

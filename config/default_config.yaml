@@ -1,5 +1,5 @@
 hotkey: "alt+space"
-dictation_hotkey: "left shift+v"
+dictation_hotkey: "f8"  # Hold to dictate; release to transcribe and paste.
 cancel_key: "esc"
 # Lightweight English-only profile for always-on local voice control and dictation.
 stt: {model: "distil-small.en", device: "cpu", compute_type: "int8", cpu_threads: 4, beam_size: 2, language: "en"}
