@@ -25,6 +25,7 @@ N_DOTS = 320              # dots over the WHOLE sphere (front + back)
 TILT = 0.40               # radians the globe is tilted toward the viewer
 BACK_ALPHA = 0.16         # brightness of dots on the far side (0..1)
 STANDBY_OPACITY = 0.85
+DICTATION_YELLOW = QColor("#FFD60A")
 
 # ---------------------------------------------------------------- window layout
 WIN_W, WIN_H = 300, 104
@@ -86,6 +87,7 @@ class PillWidget(QWidget):
         self._spin = _MODES["standby"]["spin"]
         self._text_alpha = 0.0
         self._tint = 0.0
+        self._dictation_tint = 0.0
         self._level = 0.0
 
         self.timer = QTimer(self)
@@ -158,6 +160,7 @@ class PillWidget(QWidget):
         self._spin = _chase(self._spin, goal["spin"], 4.0, dt)
         self._text_alpha = _chase(self._text_alpha, goal["text"], 14.0, dt)
         self._tint = _chase(self._tint, 1.0 if self.error else 0.0, 14.0, dt)
+        self._dictation_tint = _chase(self._dictation_tint, 1.0 if self.mode == "dictating" else 0.0, 12.0, dt)
         self._angle = (self._angle + self._spin * dt) % (2.0 * math.pi)
 
         if self.mode == "hidden" and self._opacity < 0.01:
@@ -175,11 +178,13 @@ class PillWidget(QWidget):
         self.update()
 
     def _rgb(self):
-        w, e = QColor(WHITE), QColor(ERROR)
+        w, y, e = QColor(WHITE), DICTATION_YELLOW, QColor(ERROR)
+        d = self._dictation_tint
+        r = w.red() + (y.red() - w.red()) * d
+        g = w.green() + (y.green() - w.green()) * d
+        b = w.blue() + (y.blue() - w.blue()) * d
         t = self._tint
-        return (int(w.red() + (e.red() - w.red()) * t),
-                int(w.green() + (e.green() - w.green()) * t),
-                int(w.blue() + (e.blue() - w.blue()) * t))
+        return (int(r + (e.red() - r) * t), int(g + (e.green() - g) * t), int(b + (e.blue() - b) * t))
 
     def paintEvent(self, _):
         if self._opacity <= 0.003:

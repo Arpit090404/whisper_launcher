@@ -18,6 +18,7 @@ class Controller(QObject):
     dictation_done = Signal(str)
     hotkey_requested = Signal()
     dictation_requested = Signal()
+    dictation_released = Signal()
     cancel_requested = Signal()
     recording_finished = Signal(bool)
 
@@ -30,6 +31,7 @@ class Controller(QObject):
         self.recorder = Recorder(config, self.recording_finished.emit)
         self.pill.level_source = lambda: self.recorder.rms
         self.hotkey = self.dictation_hotkey = self.cancel = None
+        self.dictation_release_hooks = []
         self.last_hotkey = 0.0
         self.generation = 0
         self._process_command = lambda _: ActionResult(False, "Speech model unavailable")
@@ -38,6 +40,7 @@ class Controller(QObject):
         self.dictation_done.connect(self._finish_dictation)
         self.hotkey_requested.connect(self.toggle_command)
         self.dictation_requested.connect(self.toggle_dictation)
+        self.dictation_released.connect(self.finish_dictation_on_release)
         self.cancel_requested.connect(self.cancel_recording)
         self.recording_finished.connect(self.finish_recording)
         self.result_timer = QTimer(self)
@@ -47,10 +50,18 @@ class Controller(QObject):
     def register(self):
         for key in (self.hotkey, self.dictation_hotkey):
             if key: keyboard.remove_hotkey(key)
+        for hook in self.dictation_release_hooks:
+            keyboard.unhook(hook)
+        self.dictation_release_hooks.clear()
         self.hotkey = keyboard.add_hotkey(self.c["hotkey"], self.hotkey_requested.emit, suppress=False)
         self.dictation_hotkey = keyboard.add_hotkey(
-            self.c["dictation_hotkey"], self.dictation_requested.emit, suppress=False
+            self.c["dictation_hotkey"], self.dictation_requested.emit, suppress=True
         )
+        # PTT completes as soon as either key forming the shortcut is released.
+        for key_name in self.c["dictation_hotkey"].split("+"):
+            self.dictation_release_hooks.append(
+                keyboard.on_release_key(key_name.strip(), self.dictation_released.emit, suppress=False)
+            )
 
     def reload_config(self, show_result=True):
         try:
@@ -85,9 +96,13 @@ class Controller(QObject):
         self.last_hotkey = time.monotonic()
         try:
             if self.state == "IDLE": self._begin("DICTATING")
-            elif self.state == "DICTATING": self.finish_recording(self.recorder.started)
         except Exception:
             self.result(False, "No microphone")
+
+    def finish_dictation_on_release(self):
+        """Push-to-talk: pressing begins capture; releasing submits it."""
+        if self.state == "DICTATING":
+            self.finish_recording(self.recorder.started)
 
     def cleanup_cancel(self):
         if self.cancel:
