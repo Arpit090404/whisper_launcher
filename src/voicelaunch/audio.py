@@ -20,7 +20,14 @@ class Recorder:
         ep=self.endpointing; elapsed=time.monotonic()-self.started_at
         if rms>ep["rms_threshold"]: self.started=True; self.silent=0.
         elif self.started: self.silent+=frames/self.c["audio"]["sample_rate"]
-        if (self.started and self.silent*1000>=ep["silence_ms"]) or elapsed>=ep["max_record_s"] or (not self.started and elapsed>=ep["no_speech_timeout_s"]): self.on_end(self.started)
+        end_on_silence = ep.get("end_on_silence", True)
+        end_on_no_speech = ep.get("end_on_no_speech", True)
+        should_end = (
+            (end_on_silence and self.started and self.silent * 1000 >= ep["silence_ms"])
+            or elapsed >= ep["max_record_s"]
+            or (end_on_no_speech and not self.started and elapsed >= ep["no_speech_timeout_s"])
+        )
+        if should_end: self.on_end(self.started)
     def stop(self) -> np.ndarray:
         self.running=False
         if self.stream: self.stream.stop(); self.stream.close(); self.stream=None

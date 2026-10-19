@@ -6,9 +6,10 @@ stt: {model: "distil-small.en", device: "cpu", compute_type: "int8", cpu_threads
 audio: {input_device: null, sample_rate: 16000, block_samples: 512}
 endpointing: {rms_threshold: 0.015, silence_ms: 800, min_speech_ms: 300, no_speech_timeout_s: 5, max_record_s: 12}
 dictation:
-  silence_ms: 1200
-  no_speech_timeout_s: 7
-  max_record_s: 90
+  # Push-to-talk records until the hotkey is released, not until a pause.
+  end_on_silence: false
+  end_on_no_speech: false
+  max_record_s: 300
   initial_prompt: "Natural English dictation with punctuation, paragraphs, names, and technical terms."
   restore_clipboard_ms: 180
 matching: {app_min_score: 75, fallback_app_min_score: 85, file_min_score: 80}
