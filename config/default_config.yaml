@@ -1,8 +1,16 @@
 hotkey: "alt+space"
+dictation_hotkey: "ctrl+alt+v"
 cancel_key: "esc"
-stt: {model: "small.en", device: "cpu", compute_type: "int8", cpu_threads: 4, beam_size: 1, language: "en"}
+# Lightweight English-only profile for always-on local voice control and dictation.
+stt: {model: "distil-small.en", device: "cpu", compute_type: "int8", cpu_threads: 4, beam_size: 2, language: "en"}
 audio: {input_device: null, sample_rate: 16000, block_samples: 512}
 endpointing: {rms_threshold: 0.015, silence_ms: 800, min_speech_ms: 300, no_speech_timeout_s: 5, max_record_s: 12}
+dictation:
+  silence_ms: 1200
+  no_speech_timeout_s: 7
+  max_record_s: 90
+  initial_prompt: "Natural English dictation with punctuation, paragraphs, names, and technical terms."
+  restore_clipboard_ms: 180
 matching: {app_min_score: 75, fallback_app_min_score: 85, file_min_score: 80}
 files: {everything_cli_path: "es.exe", max_results: 50, fallback_dirs: ["~/Desktop", "~/Documents", "~/Downloads"], fallback_max_depth: 4, exclude_substrings: ["\\node_modules\\", "\\.git\\", "\\AppData\\", "\\$Recycle.Bin\\"]}
 app_aliases: {chrome: "google chrome", "vs code": "visual studio code", code: "visual studio code", word: "microsoft word", excel: "microsoft excel"}

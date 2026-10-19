@@ -37,6 +37,7 @@ _MODES = {
     "hidden":     dict(radius=STANDBY_RADIUS, opacity=0.0,             spin=0.35, text=0.0),
     "standby":    dict(radius=STANDBY_RADIUS, opacity=STANDBY_OPACITY, spin=0.35, text=0.0),
     "listening":  dict(radius=SPHERE_RADIUS,  opacity=1.0,             spin=0.55, text=0.0),
+    "dictating":  dict(radius=SPHERE_RADIUS,  opacity=1.0,             spin=0.70, text=0.0),
     "processing": dict(radius=SPHERE_RADIUS,  opacity=1.0,             spin=2.40, text=0.0),
     "result":     dict(radius=SPHERE_RADIUS,  opacity=1.0,             spin=0.55, text=1.0),
 }
@@ -97,7 +98,7 @@ class PillWidget(QWidget):
         """listening | processing | result (| error, same as result with error=True)."""
         if mode == "error":
             mode, error = "result", True
-        if mode not in ("listening", "processing", "result"):
+        if mode not in ("listening", "dictating", "processing", "result"):
             return
         self.error = error
         if mode == "result":
@@ -127,7 +128,7 @@ class PillWidget(QWidget):
         self.mode = mode
         if mode == "hidden" and not was_visible:
             return
-        if not was_visible or mode == "listening":
+        if not was_visible or mode in ("listening", "dictating"):
             self._place()
         if not was_visible:
             self._radius = STANDBY_RADIUS            # new sphere grows out of the orb
@@ -149,7 +150,7 @@ class PillWidget(QWidget):
         goal = _MODES[self.mode]
         self._phase += dt
 
-        want = rms_to_level(self.level_source()) if self.mode == "listening" else 0.0
+        want = rms_to_level(self.level_source()) if self.mode in ("listening", "dictating") else 0.0
         self._level = _chase(self._level, want, 25.0 if want > self._level else 8.0, dt)
         self._radius = _chase(self._radius, goal["radius"], 12.0, dt)
         self._opacity = _chase(self._opacity, goal["opacity"],
