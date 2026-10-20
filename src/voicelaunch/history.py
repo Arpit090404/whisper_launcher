@@ -34,17 +34,21 @@ class TranscriptHistory:
         except (OSError, json.JSONDecodeError):
             return []
 
-    def add(self, text: str, created_at: datetime | None = None) -> None:
+    def add(self, text: str, created_at: datetime | None = None, duration_seconds: float | None = None) -> None:
         text = text.strip()
         if not text:
             return
         entries = self.entries()
-        entries.insert(0, {
+        word_count = len(text.split())
+        entry = {
             "id": uuid4().hex,
             "text": text,
             "created_at": (created_at or datetime.now()).isoformat(timespec="seconds"),
             "pinned": False,
-        })
+        }
+        if duration_seconds and duration_seconds > 0:
+            entry["wpm"] = round(word_count * 60 / duration_seconds)
+        entries.insert(0, entry)
         self._write(entries[:self.limit])
 
     def clear(self) -> None:
@@ -70,6 +74,29 @@ class TranscriptHistory:
             if created in counts:
                 counts[created] += len(entry.get("text", "").split())
         return [(day, counts[day]) for day in days]
+
+    def summary(self, today: date | None = None) -> dict[str, int]:
+        """Return dashboard metrics derived entirely from local history."""
+        today = today or date.today()
+        entries = self.entries()
+        total_words = sum(len(entry.get("text", "").split()) for entry in entries)
+        wpm_samples = [entry["wpm"] for entry in entries if isinstance(entry.get("wpm"), (int, float))]
+        active_days = set()
+        for entry in entries:
+            try:
+                active_days.add(datetime.fromisoformat(entry["created_at"]).date())
+            except (KeyError, TypeError, ValueError):
+                continue
+        streak = 0
+        day = today
+        while day in active_days:
+            streak += 1
+            day -= timedelta(days=1)
+        return {
+            "total_words": total_words,
+            "average_wpm": round(sum(wpm_samples) / len(wpm_samples)) if wpm_samples else 0,
+            "streak": streak,
+        }
 
     def _write(self, entries: list[dict[str, str]]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

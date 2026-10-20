@@ -15,7 +15,7 @@ from .ui.pill import PillWidget
 from .ui.tray import make_tray
 def run():
     ensure_dirs(); logging.basicConfig(level=logging.INFO,handlers=[RotatingFileHandler(LOG_DIR/"cassette.log",maxBytes=1_000_000,backupCount=3)])
-    app=QApplication([]); lock=QLockFile(str(DATA_DIR/"lock"));
+    app=QApplication([]); app.setQuitOnLastWindowClosed(False); lock=QLockFile(str(DATA_DIR/"lock"));
     if not lock.tryLock(10): return 0
     config,macros=load_config(); cache=DATA_DIR/"apps_cache.json"
     try: index=json.loads(cache.read_text(encoding="utf-8")) if cache.exists() else {}

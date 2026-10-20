@@ -15,7 +15,7 @@ from .actions import apps, files, web
 
 class Controller(QObject):
     command_done = Signal(object)
-    dictation_done = Signal(str)
+    dictation_done = Signal(object)
     hotkey_requested = Signal()
     dictation_requested = Signal()
     dictation_released = Signal()
@@ -144,8 +144,9 @@ class Controller(QObject):
             return
         self.state = "PROCESSING"; self.pill.show_mode("processing")
         if previous_state == "DICTATING":
+            duration_seconds = len(audio) / self.c["audio"]["sample_rate"]
             future = self.executor.submit(self._process_dictation, audio)
-            future.add_done_callback(lambda f: self.dictation_done.emit(f.result() if not f.exception() else ""))
+            future.add_done_callback(lambda f: self.dictation_done.emit((f.result() if not f.exception() else "", duration_seconds)))
         else:
             future = self.executor.submit(self._process_command, audio)
             future.add_done_callback(lambda f: self.command_done.emit(f.result() if not f.exception() else ActionResult(False, "Something went wrong")))
@@ -159,12 +160,13 @@ class Controller(QObject):
         for fmt in source.formats(): original.setData(fmt, source.data(fmt))
         return original
 
-    def _finish_dictation(self, text: str):
+    def _finish_dictation(self, result):
+        text, duration_seconds = result if isinstance(result, tuple) else (result, None)
         if not text.strip():
             self.result(False, "Didn't catch that")
             return
         if self.history:
-            self.history.add(text)
+            self.history.add(text, duration_seconds=duration_seconds)
         clipboard = QApplication.clipboard()
         previous = self._copy_mime_data()
         clipboard.setText(text)

@@ -28,3 +28,14 @@ def test_pinned_entries_are_kept_at_the_top(tmp_path):
     entries = history.entries()
     assert entries[0]["text"] == "first"
     assert entries[0]["pinned"] is True
+
+
+def test_summary_includes_words_wpm_and_streak(tmp_path):
+    history = TranscriptHistory(tmp_path / "history.json")
+    history.add("one two three", datetime(2026, 10, 19, 9, 0), duration_seconds=30)
+    history.add("four five", datetime(2026, 10, 20, 9, 0), duration_seconds=30)
+    assert history.summary(date(2026, 10, 20)) == {
+        "total_words": 5,
+        "average_wpm": 5,
+        "streak": 2,
+    }
