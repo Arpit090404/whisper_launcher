@@ -1,4 +1,4 @@
-"""PyInstaller entry point for VoiceLaunch.
+"""PyInstaller entry point for Cassette.
 
 Keeping this outside the package lets PyInstaller import the package normally,
 so package-relative imports continue to work in a frozen executable.

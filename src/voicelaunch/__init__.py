@@ -1,1 +1,1 @@
-"""VoiceLaunch local voice-command launcher."""
+"""Cassette local voice-command launcher."""

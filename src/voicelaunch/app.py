@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from PySide6.QtCore import QLockFile, QTimer
 from PySide6.QtWidgets import QApplication
 from .paths import ensure_dirs, DATA_DIR, LOG_DIR
+from .history import TranscriptHistory
 from .config import load_config
 from .actions.apps import build_index
 from .controller import Controller
@@ -13,7 +14,7 @@ from .stt import clean_dictation
 from .ui.pill import PillWidget
 from .ui.tray import make_tray
 def run():
-    ensure_dirs(); logging.basicConfig(level=logging.INFO,handlers=[RotatingFileHandler(LOG_DIR/"voicelaunch.log",maxBytes=1_000_000,backupCount=3)])
+    ensure_dirs(); logging.basicConfig(level=logging.INFO,handlers=[RotatingFileHandler(LOG_DIR/"cassette.log",maxBytes=1_000_000,backupCount=3)])
     app=QApplication([]); lock=QLockFile(str(DATA_DIR/"lock"));
     if not lock.tryLock(10): return 0
     config,macros=load_config(); cache=DATA_DIR/"apps_cache.json"
@@ -23,11 +24,12 @@ def run():
         new_config,new_macros=load_config()
         config.clear(); config.update(new_config)
         macros.clear(); macros.update(new_macros)
-    pill=PillWidget(config); controller=Controller(pill,config,macros,index,reload_live_config); controller.register(); tray=make_tray(controller,app); pill.show_standby()
+    history = TranscriptHistory(DATA_DIR / "transcript_history.json")
+    pill=PillWidget(config); controller=Controller(pill,config,macros,index,reload_live_config,history); controller.register(); tray=make_tray(controller,app,history); pill.show_standby()
     stt=STT(config,DATA_DIR/"models")
     def loaded():
-        try: stt.load(); tray.setToolTip("VoiceLaunch — ready")
-        except Exception: logging.exception("Speech model failed to load"); tray.showMessage("VoiceLaunch","Could not download speech model. Check your internet and restart.")
+        try: stt.load(); tray.setToolTip("Cassette — ready")
+        except Exception: logging.exception("Speech model failed to load"); tray.showMessage("Cassette","Could not download speech model. Check your internet and restart.")
     def command_prompt():
         apps_prompt=", ".join(list(index)[:40])
         macro_prompt=", ".join(trigger for m in macros.get("macros",[]) for trigger in m.get("triggers",[]))

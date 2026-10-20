@@ -8,7 +8,7 @@ $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $Python)) { throw "Create .venv first: python -m venv .venv" }
 
 & $Python -m PyInstaller --noconfirm --clean --onedir --noconsole `
-    --name VoiceLaunch `
+    --name Cassette `
     --collect-all faster_whisper --collect-all ctranslate2 `
     --add-data "$ProjectRoot\config;config" `
     --add-data "$ProjectRoot\assets;assets" `
@@ -19,4 +19,4 @@ if (-not (Test-Path $Python)) { throw "Create .venv first: python -m venv .venv"
     --specpath "$ProjectRoot\build" `
     "$ProjectRoot\run_voicelaunch.py"
 
-Write-Host "Built release\VoiceLaunch\VoiceLaunch.exe ($Version)"
+Write-Host "Built release\Cassette\Cassette.exe ($Version)"

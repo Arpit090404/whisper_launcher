@@ -1,4 +1,4 @@
-"""The single owner of VoiceLaunch's command and dictation state machines."""
+"""The single owner of Cassette's command and dictation state machines."""
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 import os, subprocess, time
@@ -22,10 +22,11 @@ class Controller(QObject):
     cancel_requested = Signal()
     recording_finished = Signal(bool)
 
-    def __init__(self, pill, config, macros, app_index, reload_callback=None):
+    def __init__(self, pill, config, macros, app_index, reload_callback=None, history=None):
         super().__init__()
         self.pill, self.c, self.macros, self.index = pill, config, macros, app_index
         self.reload_callback = reload_callback
+        self.history = history
         self.state = "IDLE"
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.recorder = Recorder(config, self.recording_finished.emit)
@@ -78,6 +79,17 @@ class Controller(QObject):
             if show_result: self.result(True, "Config reloaded")
         except Exception:
             if show_result: self.result(False, "Invalid config")
+
+    def refresh_app_index(self):
+        """Rebuild the local app lookup cache from the tray menu."""
+        try:
+            from .actions.apps import build_index
+            from .paths import DATA_DIR
+            self.index.clear()
+            self.index.update(build_index(DATA_DIR / "apps_cache.json"))
+            self.result(True, "Apps refreshed")
+        except Exception:
+            self.result(False, "Couldn't refresh apps")
 
     def _begin(self, mode: str):
         self.generation += 1
@@ -151,6 +163,8 @@ class Controller(QObject):
         if not text.strip():
             self.result(False, "Didn't catch that")
             return
+        if self.history:
+            self.history.add(text)
         clipboard = QApplication.clipboard()
         previous = self._copy_mime_data()
         clipboard.setText(text)
@@ -167,8 +181,7 @@ class Controller(QObject):
     def execute(self, intent):
         if intent.kind == "meta":
             if intent.meta == "refresh_apps":
-                from .paths import DATA_DIR
-                self.index.update(apps.build_index(DATA_DIR / "apps_cache.json")); return ActionResult(True, "Apps refreshed")
+                self.refresh_app_index(); return ActionResult(True, "Apps refreshed")
             self.reload_config(show_result=False); return ActionResult(True, "Config reloaded")
         if intent.kind == "macro":
             macro = next((m for m in self.macros.get("macros", []) if m.get("name") == intent.arg), None)
