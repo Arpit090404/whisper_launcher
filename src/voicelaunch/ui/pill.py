@@ -1,67 +1,86 @@
-"""The one and only overlay window: standby orb -> listening -> processing -> result.
-
-Why this exists: the old design used two windows (standby orb + pill) and restarted a
-fade/grow animation on every state change, so animations stacked and overlapped.
-
-Now there is ONE window, ONE timer and ONE render loop. Every visual property (radius,
-opacity, spin speed, text, error tint) simply chases a target value with exponential
-smoothing.  A new state only re-aims the same sphere, so nothing can overlap and nothing
-restarts from zero.
-"""
+"""Cassette's translucent standby pill and active dot-sphere overlay."""
 from __future__ import annotations
-import math, time
+
+import math
+import time
+
 import numpy as np
-from PySide6.QtCore import Qt, QTimer, QPointF, QRectF
-from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QPainter
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
+from PySide6.QtGui import QColor, QCursor, QPainter, QPainterPath
 from PySide6.QtWidgets import QApplication, QWidget
-from .theme import WHITE, ERROR
+
 from ..audio import rms_to_level
 from ..winapi import harden_overlay
 
-# ---------------------------------------------------------------- look (tweak here)
-SPHERE_RADIUS = 19.0      # active sphere (listening / processing / result). Was 38 -> 50% smaller
-STANDBY_RADIUS = 12.5     # small idle orb
-N_DOTS = 320              # dots over the WHOLE sphere (front + back)
-TILT = 0.40               # radians the globe is tilted toward the viewer
-BACK_ALPHA = 0.16         # brightness of dots on the far side (0..1)
-STANDBY_OPACITY = 0.85
-DICTATION_YELLOW = QColor("#FFD60A")
 
-# ---------------------------------------------------------------- window layout
-WIN_W, WIN_H = 300, 104
-CENTER_Y = 40             # sphere centre inside the window
-ANCHOR_FROM_BOTTOM = 70   # sphere centre sits this far above the work-area bottom
-TEXT_GAP = 14             # gap between sphere and result text
+# Compact, Wispr-Flow-like sizing: a hairline pill at rest, a small orb when active.
+STANDBY_W, STANDBY_H = 36.0, 9.0
+ACTIVE_SIZE = 54.0
+ACTIVE_CORNER = 20.0
+SPHERE_RADIUS = 16.5
+N_DOTS = 240
+TILT = 0.40
+BACK_ALPHA = 0.14
+ANCHOR_FROM_BOTTOM = 44
 
-# mode -> target values the animation chases
 _MODES = {
-    "hidden":     dict(radius=STANDBY_RADIUS, opacity=0.0,             spin=0.35, text=0.0),
-    "standby":    dict(radius=STANDBY_RADIUS, opacity=STANDBY_OPACITY, spin=0.35, text=0.0),
-    "listening":  dict(radius=SPHERE_RADIUS,  opacity=1.0,             spin=0.55, text=0.0),
-    "dictating":  dict(radius=SPHERE_RADIUS,  opacity=1.0,             spin=0.70, text=0.0),
-    "processing": dict(radius=SPHERE_RADIUS,  opacity=1.0,             spin=2.40, text=0.0),
-    "result":     dict(radius=SPHERE_RADIUS,  opacity=1.0,             spin=0.55, text=1.0),
+    "hidden":     dict(width=STANDBY_W, height=STANDBY_H, sphere=0.0, opacity=0.0, spin=0.30),
+    "standby":    dict(width=STANDBY_W, height=STANDBY_H, sphere=0.0, opacity=1.0, spin=0.30),
+    "listening":  dict(width=ACTIVE_SIZE, height=ACTIVE_SIZE, sphere=1.0, opacity=1.0, spin=0.55),
+    "dictating":  dict(width=ACTIVE_SIZE, height=ACTIVE_SIZE, sphere=1.0, opacity=1.0, spin=0.70),
+    "processing": dict(width=ACTIVE_SIZE, height=ACTIVE_SIZE, sphere=1.0, opacity=1.0, spin=2.40),
+    "result":     dict(width=ACTIVE_SIZE, height=ACTIVE_SIZE, sphere=1.0, opacity=1.0, spin=0.55),
 }
 
+# Per-property settle times (seconds). Critically damped: eases in and out, no overshoot.
+_SIZE_TIME = 0.11
+_SPHERE_TIME = 0.10
+_SPIN_TIME = 0.25
 
-def _fibonacci_sphere(n: int) -> np.ndarray:
-    """n points spread evenly over the full unit sphere (both hemispheres)."""
-    k = np.arange(n)
-    y = 1.0 - 2.0 * (k + 0.5) / n
-    r = np.sqrt(1.0 - y * y)
-    theta = math.pi * (3.0 - math.sqrt(5.0)) * k        # golden angle
-    return np.stack([r * np.cos(theta), y, r * np.sin(theta)], axis=1)
+
+def _fibonacci_sphere(count: int) -> np.ndarray:
+    index = np.arange(count)
+    y = 1.0 - 2.0 * (index + 0.5) / count
+    radius = np.sqrt(1.0 - y * y)
+    theta = math.pi * (3.0 - math.sqrt(5.0)) * index
+    return np.stack([radius * np.cos(theta), y, radius * np.sin(theta)], axis=1)
 
 
 _POINTS = _fibonacci_sphere(N_DOTS)
+_SHIMMER = np.arange(N_DOTS) * 1.7
 
 
-def _chase(cur: float, target: float, rate: float, dt: float) -> float:
-    """Frame-rate independent exponential approach."""
-    return cur + (target - cur) * (1.0 - math.exp(-rate * dt))
+def _chase(current: float, target: float, rate: float, dt: float) -> float:
+    return current + (target - current) * (1.0 - math.exp(-rate * dt))
+
+
+class _Smooth:
+    """Critically damped spring: starts and stops gently instead of snapping."""
+
+    __slots__ = ("value", "vel")
+
+    def __init__(self, value: float):
+        self.value = value
+        self.vel = 0.0
+
+    def update(self, target: float, smooth_time: float, dt: float) -> float:
+        omega = 2.0 / smooth_time
+        x = omega * dt
+        decay = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x)
+        change = self.value - target
+        temp = (self.vel + omega * change) * dt
+        self.vel = (self.vel - omega * temp) * decay
+        self.value = target + (change + temp) * decay
+        return self.value
+
+
+def _corner(height: float) -> float:
+    return min(height / 2.0, ACTIVE_CORNER)
 
 
 class PillWidget(QWidget):
+    """One click-through window that morphs between the two reference shapes."""
+
     def __init__(self, config: dict):
         flags = (Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint |
                  Qt.WindowType.Tool | Qt.WindowType.WindowTransparentForInput |
@@ -71,44 +90,45 @@ class PillWidget(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setFixedSize(WIN_W, WIN_H)
+        self.resize(round(STANDBY_W), round(STANDBY_H))
 
-        self.level_source = lambda: 0.0          # set by the controller (mic RMS)
+        self.level_source = lambda: 0.0
         self.mode = "hidden"
         self.error = False
-        self.text = ""
         self._standby_enabled = False
-
         self._last = time.monotonic()
         self._phase = 0.0
         self._angle = 0.0
-        self._radius = STANDBY_RADIUS
-        self._opacity = 0.0
+        self._w = _Smooth(STANDBY_W)
+        self._h = _Smooth(STANDBY_H)
+        self._s = _Smooth(0.0)
+        self._sp = _Smooth(_MODES["standby"]["spin"])
+        self._width, self._height = STANDBY_W, STANDBY_H
+        self._sphere = 0.0
         self._spin = _MODES["standby"]["spin"]
-        self._text_alpha = 0.0
-        self._tint = 0.0
-        self._dictation_tint = 0.0
+        self._opacity = 0.0
         self._level = 0.0
+        self._geom = None            # last applied (x, y, w, h)
+        self._avail = None           # cached screen geometry
+        self._win_opacity = -1.0
 
         self.timer = QTimer(self)
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.setInterval(16)
         self.timer.timeout.connect(self._tick)
 
-    # ------------------------------------------------------------------ public API
+    # ---- public API -------------------------------------------------------------
+
     def show_mode(self, mode: str, text: str = "", error: bool = False):
-        """listening | processing | result (| error, same as result with error=True)."""
+        """Show the active translucent tile. Dictation and listening stay white."""
         if mode == "error":
             mode, error = "result", True
         if mode not in ("listening", "dictating", "processing", "result"):
             return
         self.error = error
-        if mode == "result":
-            self.text = text
         self._set_mode(mode)
 
     def show_standby(self):
-        """Show the small idle orb. Never interrupts an active session."""
         if not self.config.get("ui", {}).get("show_standby_icon", True):
             return
         self._standby_enabled = True
@@ -121,47 +141,77 @@ class PillWidget(QWidget):
             self._set_mode("hidden")
 
     def fade_hide(self):
-        """Session over: glide the SAME sphere back to the standby orb (or fade out)."""
         self._set_mode("standby" if self._standby_enabled else "hidden")
 
-    # ------------------------------------------------------------------ internals
+    # ---- internals --------------------------------------------------------------
+
     def _set_mode(self, mode: str):
-        was_visible = self.isVisible()
+        visible = self.isVisible()
         self.mode = mode
-        if mode == "hidden" and not was_visible:
+        if mode == "hidden" and not visible:
             return
-        if not was_visible or mode in ("listening", "dictating"):
-            self._place()
-        if not was_visible:
-            self._radius = STANDBY_RADIUS            # new sphere grows out of the orb
+        if not visible:
+            self._reset_motion()
             self._last = time.monotonic()
+            self._refresh_screen()
+            self._place(force=True)
+            self.setWindowOpacity(0.0)
+            self._win_opacity = 0.0
             self.show()
             harden_overlay(int(self.winId()))
         if not self.timer.isActive():
             self.timer.start()
 
-    def _place(self):
+    def _reset_motion(self):
+        self._w.value, self._w.vel = STANDBY_W, 0.0
+        self._h.value, self._h.vel = STANDBY_H, 0.0
+        self._s.value, self._s.vel = 0.0, 0.0
+        self._width, self._height, self._sphere = STANDBY_W, STANDBY_H, 0.0
+        self._geom = None
+
+    def _refresh_screen(self):
         screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
-        geo = screen.availableGeometry()
-        self.move(geo.center().x() - WIN_W // 2, geo.bottom() - ANCHOR_FROM_BOTTOM - CENTER_Y)
+        self._avail = screen.availableGeometry()
+
+    def _place(self, force: bool = False):
+        if self._avail is None:
+            self._refresh_screen()
+        # Snap to even pixels so the centre never wobbles by half a pixel mid-morph.
+        width = max(2, int(round(self._width / 2.0)) * 2)
+        height = max(2, int(round(self._height / 2.0)) * 2)
+        x = self._avail.center().x() - width // 2
+        y = self._avail.bottom() - ANCHOR_FROM_BOTTOM - height
+        geom = (x, y, width, height)
+        if geom == self._geom and not force:
+            return
+        self._geom = geom
+        self.setGeometry(x, y, width, height)
 
     def _tick(self):
         now = time.monotonic()
         dt = min(0.05, now - self._last)
         self._last = now
-        goal = _MODES[self.mode]
+        target = _MODES[self.mode]
         self._phase += dt
 
-        want = rms_to_level(self.level_source()) if self.mode in ("listening", "dictating") else 0.0
-        self._level = _chase(self._level, want, 25.0 if want > self._level else 8.0, dt)
-        self._radius = _chase(self._radius, goal["radius"], 12.0, dt)
-        self._opacity = _chase(self._opacity, goal["opacity"],
-                               20.0 if goal["opacity"] > self._opacity else 14.0, dt)
-        self._spin = _chase(self._spin, goal["spin"], 4.0, dt)
-        self._text_alpha = _chase(self._text_alpha, goal["text"], 14.0, dt)
-        self._tint = _chase(self._tint, 1.0 if self.error else 0.0, 14.0, dt)
-        self._dictation_tint = _chase(self._dictation_tint, 1.0 if self.mode == "dictating" else 0.0, 12.0, dt)
+        listening = self.mode in ("listening", "dictating")
+        level = rms_to_level(self.level_source()) if listening else 0.0
+        self._level = _chase(self._level, level, 18.0 if level > self._level else 6.0, dt)
+
+        self._width = self._w.update(target["width"], _SIZE_TIME, dt)
+        self._height = self._h.update(target["height"], _SIZE_TIME, dt)
+        self._sphere = self._s.update(target["sphere"], _SPHERE_TIME, dt)
+        self._spin = self._sp.update(target["spin"], _SPIN_TIME, dt)
+        self._opacity = _chase(self._opacity, target["opacity"], 20.0, dt)
         self._angle = (self._angle + self._spin * dt) % (2.0 * math.pi)
+
+        # Fade the entire window so its translucent surface and content stay in sync.
+        win_opacity = round(max(0.0, min(1.0, self._opacity)), 2)
+        if win_opacity != self._win_opacity:
+            self._win_opacity = win_opacity
+            self.setWindowOpacity(win_opacity)
+
+        self._place()
 
         if self.mode == "hidden" and self._opacity < 0.01:
             self._opacity = 0.0
@@ -169,62 +219,59 @@ class PillWidget(QWidget):
             self.hide()
             return
 
-        settled = (abs(self._radius - goal["radius"]) < 0.05 and
-                   abs(self._opacity - goal["opacity"]) < 0.005 and
-                   abs(self._text_alpha - goal["text"]) < 0.01)
-        interval = 33 if (self.mode == "standby" and settled) else 16   # idle orb: 30 fps is plenty
+        settled = (abs(self._width - target["width"]) < 0.1 and
+                   abs(self._height - target["height"]) < 0.1 and
+                   abs(self._sphere - target["sphere"]) < 0.01)
+        interval = 33 if self.mode == "standby" and settled else 16
         if self.timer.interval() != interval:
             self.timer.setInterval(interval)
         self.update()
 
-    def _rgb(self):
-        w, y, e = QColor(WHITE), DICTATION_YELLOW, QColor(ERROR)
-        d = self._dictation_tint
-        r = w.red() + (y.red() - w.red()) * d
-        g = w.green() + (y.green() - w.green()) * d
-        b = w.blue() + (y.blue() - w.blue()) * d
-        t = self._tint
-        return (int(r + (e.red() - r) * t), int(g + (e.green() - g) * t), int(b + (e.blue() - b) * t))
-
     def paintEvent(self, _):
         if self._opacity <= 0.003:
             return
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(Qt.PenStyle.NoPen)
-        cr, cg, cb = self._rgb()
-        cx, cy = WIN_W / 2.0, float(CENTER_Y)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        width, height = self.width(), self.height()
+        corner = _corner(height)
 
-        # Rotate the FULL sphere around its vertical axis, tilt it a little, project.
+        shape = QPainterPath()
+        shape.addRoundedRect(QRectF(0.25, 0.25, width - 0.5, height - 0.5), corner, corner)
+        painter.fillPath(shape, QColor(0, 0, 0, 184))
+        painter.setPen(QColor(255, 255, 255, int(58 * self._opacity)))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(shape)
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        if self._sphere < 0.01:
+            return
+
+        cx, cy = width / 2.0, height / 2.0
         ca, sa = math.cos(self._angle), math.sin(self._angle)
         ct, st = math.cos(TILT), math.sin(TILT)
         px, py, pz = _POINTS[:, 0], _POINTS[:, 1], _POINTS[:, 2]
         x1 = px * ca + pz * sa
         z1 = -px * sa + pz * ca
         y2 = py * ct - z1 * st
-        z2 = py * st + z1 * ct                       # +1 = facing the viewer, -1 = far side
-        order = np.argsort(z2).tolist()              # paint far side first, near side on top
-        x1, y2, z2 = x1.tolist(), y2.tolist(), z2.tolist()
+        z2 = py * st + z1 * ct
+        order = np.argsort(z2)
 
-        radius = self._radius * (1.0 + 0.12 * self._level)       # mic level makes it breathe
-        size_k = 0.55 + 0.45 * (self._radius / SPHERE_RADIUS)    # orb dots a bit smaller
-        lvl, ph = self._level, self._phase
-        for i in order:
-            depth = (z2[i] + 1.0) * 0.5
-            alpha = (BACK_ALPHA + (1.0 - BACK_ALPHA) * depth ** 1.4) * self._opacity
-            r = radius * (1.0 + 0.08 * lvl * math.sin(ph * 7.0 + i * 1.7))
-            d = (0.8 + 1.3 * depth) * size_k
-            p.setBrush(QColor(cr, cg, cb, int(255 * alpha)))
-            p.drawEllipse(QPointF(cx + x1[i] * r, cy + y2[i] * r), d / 2, d / 2)
+        # Gentle idle breathing plus a smoothed level swell (no per-dot jitter).
+        breathe = 1.0 + 0.015 * math.sin(self._phase * 1.6)
+        radius = SPHERE_RADIUS * self._sphere * breathe * (1.0 + 0.10 * self._level)
+        shimmer = 1.0 + 0.035 * self._level * np.sin(self._phase * 6.0 + _SHIMMER)
 
-        if self._text_alpha > 0.01 and self.text:
-            f = self.font()
-            f.setFamilies(["Segoe UI Variable Text", "Segoe UI"])
-            f.setPixelSize(13)
-            f.setWeight(QFont.Weight.DemiBold)
-            p.setFont(f)
-            shown = QFontMetrics(f).elidedText(self.text, Qt.TextElideMode.ElideMiddle, WIN_W - 24)
-            a = int(255 * 0.92 * self._text_alpha * self._opacity)
-            p.setPen(QColor(cr, cg, cb, a))
-            p.drawText(QRectF(0, CENTER_Y + SPHERE_RADIUS + TEXT_GAP, WIN_W, 22),
-                       Qt.AlignmentFlag.AlignCenter, shown)
+        depth = (z2 + 1.0) * 0.5
+        alpha = (BACK_ALPHA + (1.0 - BACK_ALPHA) * depth ** 1.4) * self._opacity * self._sphere
+        size = (0.46 + 0.78 * depth) * self._sphere
+        xs = (cx + x1 * radius * shimmer).tolist()
+        ys = (cy + y2 * radius * shimmer).tolist()
+        alpha_l, size_l = alpha.tolist(), size.tolist()
+
+        # One brush, per-dot opacity: far cheaper than building a QColor per dot.
+        painter.setBrush(QColor("#FF6B63") if self.error else QColor("#FFFFFF"))
+        for i in order.tolist():
+            painter.setOpacity(alpha_l[i])
+            r = size_l[i] / 2.0
+            painter.drawEllipse(QPointF(xs[i], ys[i]), r, r)
