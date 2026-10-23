@@ -2,15 +2,16 @@ hotkey: "alt+space"
 dictation_hotkey: "f8"  # Hold to dictate; release to transcribe and paste.
 cancel_key: "esc"
 # Lightweight English-only profile for always-on local voice control and dictation.
-stt: {model: "distil-small.en", device: "cpu", compute_type: "int8", cpu_threads: 4, beam_size: 2, language: "en"}
-audio: {input_device: null, sample_rate: 16000, block_samples: 512}
-endpointing: {rms_threshold: 0.015, silence_ms: 800, min_speech_ms: 300, no_speech_timeout_s: 5, max_record_s: 12}
+stt: {model: "distil-small.en", device: "cpu", compute_type: "int8", cpu_threads: 4, beam_size: 2, language: "en", command_vad_silence_ms: 300, dictation_vad_silence_ms: 550, no_speech_threshold: 0.62, trim_rms_threshold: 0.0035, trim_padding_ms: 180}
+# 20 ms blocks make capture feel immediate while using only a tiny active-only buffer.
+audio: {input_device: null, sample_rate: 16000, block_samples: 320}
+endpointing: {rms_threshold: 0.010, silence_ms: 650, min_speech_ms: 300, no_speech_timeout_s: 5, max_record_s: 12}
 dictation:
   # Push-to-talk records until the hotkey is released, not until a pause.
   end_on_silence: false
   end_on_no_speech: false
   max_record_s: 300
-  initial_prompt: "Natural English dictation with punctuation, paragraphs, names, and technical terms."
+  initial_prompt: "Faithfully transcribe natural English dictation. Keep every spoken word, including names and technical terms. Add only natural punctuation and sentence boundaries."
   restore_clipboard_ms: 180
 matching: {app_min_score: 75, fallback_app_min_score: 85, file_min_score: 80}
 files: {everything_cli_path: "es.exe", max_results: 50, fallback_dirs: ["~/Desktop", "~/Documents", "~/Downloads"], fallback_max_depth: 4, exclude_substrings: ["\\node_modules\\", "\\.git\\", "\\AppData\\", "\\$Recycle.Bin\\"]}
