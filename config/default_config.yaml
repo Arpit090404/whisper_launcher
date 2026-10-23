@@ -2,7 +2,7 @@ hotkey: "alt+space"
 dictation_hotkey: "f8"  # Hold to dictate; release to transcribe and paste.
 cancel_key: "esc"
 # Lightweight English-only profile for always-on local voice control and dictation.
-stt: {model: "distil-small.en", device: "cpu", compute_type: "int8", cpu_threads: 4, beam_size: 2, language: "en", command_vad_silence_ms: 300, dictation_vad_silence_ms: 550, no_speech_threshold: 0.62, trim_rms_threshold: 0.0035, trim_padding_ms: 180}
+stt: {model: "distil-small.en", device: "cpu", compute_type: "int8", cpu_threads: 4, beam_size: 2, command_beam_size: 1, dictation_beam_size: 2, language: "en", command_vad_silence_ms: 300, dictation_vad_silence_ms: 550, no_speech_threshold: 0.62, trim_rms_threshold: 0.0035, trim_padding_ms: 180}
 # 20 ms blocks make capture feel immediate while using only a tiny active-only buffer.
 audio: {input_device: null, sample_rate: 16000, block_samples: 320}
 endpointing: {rms_threshold: 0.010, silence_ms: 650, min_speech_ms: 300, no_speech_timeout_s: 5, max_record_s: 12}

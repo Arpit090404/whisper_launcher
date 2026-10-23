@@ -44,5 +44,7 @@ def run():
     controller._process=process
     controller._process_command=process
     controller._process_dictation=dictate
-    pool=ThreadPoolExecutor(max_workers=1); pool.submit(loaded); pool.submit(lambda: index.update(build_index(cache)))
+    # Both tasks run only during startup.  Do not make the hotkey wait for the
+    # Windows app scan after the speech model has finished warming up.
+    pool=ThreadPoolExecutor(max_workers=2); pool.submit(loaded); pool.submit(lambda: index.update(build_index(cache)))
     return app.exec()

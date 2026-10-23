@@ -50,8 +50,12 @@ class STT:
         vad_silence_ms = c.get(
             "dictation_vad_silence_ms" if dictation else "command_vad_silence_ms", 550 if dictation else 300
         )
+        # Launcher commands are short and normally contain an app name, so a
+        # single beam returns them sooner. Dictation keeps the configured
+        # wider search for better word recovery.
+        beam_size = c.get("dictation_beam_size" if dictation else "command_beam_size", c["beam_size"])
         segments,_=self.model.transcribe(
-            audio, language=c["language"], beam_size=c["beam_size"], vad_filter=True,
+            audio, language=c["language"], beam_size=beam_size, vad_filter=True,
             # Dictation gets a longer VAD hangover so short pauses and quiet
             # connecting words are not split away. Commands finish sooner.
             vad_parameters={"min_silence_duration_ms": vad_silence_ms},
